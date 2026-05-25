@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shreyshringare/Ledger/internal/engine"
@@ -138,17 +137,45 @@ func (s *PostgresStore) ListTransactions(ctx context.Context) ([]engine.Transact
 	if err != nil {
 		return nil, fmt.Errorf("list transactions: %w", err)
 	}
-	defer rows.Close()
 
 	var txs []engine.Transaction
 	for rows.Next() {
 		var tx engine.Transaction
 		if err := rows.Scan(&tx.ID, &tx.Description, &tx.PostedAt, &tx.Hash, &tx.PrevHash); err != nil {
+			rows.Close()
 			return nil, fmt.Errorf("scan transaction: %w", err)
 		}
 		txs = append(txs, tx)
 	}
-	return txs, rows.Err()
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Load entries for each transaction — required for VerifyChain to recompute correct hashes.
+	for i := range txs {
+		entryRows, err := s.db.Query(ctx,
+			`SELECT id, transaction_id, account_id, amount_minor, currency, is_debit, created_at
+			 FROM entries WHERE transaction_id = $1 ORDER BY created_at`,
+			txs[i].ID,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("get entries for tx %s: %w", txs[i].ID, err)
+		}
+		for entryRows.Next() {
+			var e engine.Entry
+			if err := entryRows.Scan(&e.ID, &e.TransactionID, &e.AccountID, &e.AmountMinor, &e.Currency, &e.IsDebit, &e.CreatedAt); err != nil {
+				entryRows.Close()
+				return nil, fmt.Errorf("scan entry: %w", err)
+			}
+			txs[i].Entries = append(txs[i].Entries, e)
+		}
+		entryRows.Close()
+		if err := entryRows.Err(); err != nil {
+			return nil, fmt.Errorf("entries rows error for tx %s: %w", txs[i].ID, err)
+		}
+	}
+	return txs, nil
 }
 
 func (s *PostgresStore) GetLastHash(ctx context.Context) (string, error) {
@@ -176,4 +203,3 @@ func (s *PostgresStore) GetBalance(ctx context.Context, accountID string, curren
 }
 
 var _ engine.Store = (*PostgresStore)(nil)
-var _ = uuid.Nil
