@@ -123,7 +123,14 @@ else
   ok "Tamper detected — SHA-256 chain caught the corruption"
 fi
 
+# ── Restore clean state ───────────────────────────────────────────────────────
+
+step "Restoring DB to clean state after tamper demo"
+docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -q \
+  -c "TRUNCATE entries, transactions, accounts RESTART IDENTITY CASCADE;"
+ok "DB reset — API is ready for fresh use"
 echo ""
+
 echo -e "${BOLD}Demo complete.${RESET}"
 echo "The ledger posted 3 transactions, maintained correct balances,"
 echo "and detected a direct database corruption via SHA-256 hash chaining."
