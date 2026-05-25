@@ -69,6 +69,15 @@ func (h *Handler) ListAccounts(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, accounts)
 }
 
+func (h *Handler) ListTransactions(w http.ResponseWriter, r *http.Request) {
+	transactions, err := h.engine.Store().ListTransactions(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, transactions)
+}
+
 func (h *Handler) PostTransaction(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Description string `json:"description"`

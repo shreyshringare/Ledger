@@ -14,6 +14,7 @@ func BuildRouter(e *engine.Engine) http.Handler {
 	r.Post("/accounts", h.CreateAccount)
 	r.Get("/accounts", h.ListAccounts)
 	r.Post("/transactions", h.PostTransaction)
+	r.Get("/transactions", h.ListTransactions)
 	r.Get("/transactions/{id}", h.GetTransaction)
 	r.Get("/accounts/{id}/balance", h.GetBalance)
 	r.Get("/chain/verify", h.VerifyChain)
