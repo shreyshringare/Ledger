@@ -17,6 +17,7 @@ type Store interface {
 	PostTransaction(ctx context.Context, tx Transaction) (Transaction, error)
 	GetTransaction(ctx context.Context, id string) (Transaction, error)
 	ListTransactions(ctx context.Context) ([]Transaction, error)
+	ListTransactionsPaginated(ctx context.Context, limit, offset int) ([]Transaction, error)
 
 	GetBalance(ctx context.Context, accountID string, currency string) (int64, error)
 

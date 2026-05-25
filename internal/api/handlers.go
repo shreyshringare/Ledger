@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -71,12 +72,25 @@ func (h *Handler) ListAccounts(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) ListTransactions(w http.ResponseWriter, r *http.Request) {
-	transactions, err := h.engine.Store().ListTransactions(r.Context())
+	limit := 20
+	offset := 0
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			limit = n
+		}
+	}
+	if v := r.URL.Query().Get("offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			offset = n
+		}
+	}
+
+	txs, err := h.engine.Store().ListTransactionsPaginated(r.Context(), limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, transactions)
+	writeJSON(w, http.StatusOK, txs)
 }
 
 func (h *Handler) PostTransaction(w http.ResponseWriter, r *http.Request) {

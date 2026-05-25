@@ -78,6 +78,10 @@ func (f *fakeStore) ListTransactions(_ context.Context) ([]Transaction, error) {
 	return f.transactions, nil
 }
 
+func (f *fakeStore) ListTransactionsPaginated(_ context.Context, limit, offset int) ([]Transaction, error) {
+	return nil, nil
+}
+
 func (f *fakeStore) CheckIdempotencyKey(_ context.Context, key string) ([]byte, bool, error) {
 	return nil, false, nil
 }

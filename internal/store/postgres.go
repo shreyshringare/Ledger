@@ -210,6 +210,70 @@ func (s *PostgresStore) ListTransactions(ctx context.Context) ([]engine.Transact
 	return ordered, rows.Err()
 }
 
+func (s *PostgresStore) ListTransactionsPaginated(ctx context.Context, limit, offset int) ([]engine.Transaction, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	rows, err := s.db.Query(ctx,
+		`SELECT t.id, t.description, t.posted_at, t.hash, t.prev_hash,
+		        e.id, e.transaction_id, e.account_id, e.amount_minor, e.currency, e.is_debit, e.created_at
+		 FROM (
+		   SELECT id, description, posted_at, hash, prev_hash
+		   FROM transactions
+		   ORDER BY posted_at ASC
+		   LIMIT $1 OFFSET $2
+		 ) t
+		 LEFT JOIN entries e ON e.transaction_id = t.id
+		 ORDER BY t.posted_at, e.created_at`,
+		limit, offset,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list transactions paginated: %w", err)
+	}
+	defer rows.Close()
+
+	var ordered []engine.Transaction
+	txIndex := map[string]int{}
+
+	for rows.Next() {
+		var tx engine.Transaction
+		var eID, eTxID, eAccID *uuid.UUID
+		var eAmountMinor *int64
+		var eCurrency *string
+		var eIsDebit *bool
+		var eCreatedAt *time.Time
+
+		if err := rows.Scan(
+			&tx.ID, &tx.Description, &tx.PostedAt, &tx.Hash, &tx.PrevHash,
+			&eID, &eTxID, &eAccID, &eAmountMinor, &eCurrency, &eIsDebit, &eCreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan row: %w", err)
+		}
+
+		txKey := tx.ID.String()
+		idx, seen := txIndex[txKey]
+		if !seen {
+			idx = len(ordered)
+			txIndex[txKey] = idx
+			ordered = append(ordered, tx)
+		}
+
+		if eID != nil {
+			e := engine.Entry{
+				ID:            *eID,
+				TransactionID: *eTxID,
+				AccountID:     *eAccID,
+				AmountMinor:   *eAmountMinor,
+				Currency:      *eCurrency,
+				IsDebit:       *eIsDebit,
+				CreatedAt:     *eCreatedAt,
+			}
+			ordered[idx].Entries = append(ordered[idx].Entries, e)
+		}
+	}
+	return ordered, rows.Err()
+}
+
 func (s *PostgresStore) GetBalance(ctx context.Context, accountID string, currency string) (int64, error) {
 	var balance int64
 	err := s.db.QueryRow(ctx,
