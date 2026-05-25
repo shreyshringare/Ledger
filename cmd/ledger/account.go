@@ -23,6 +23,14 @@ var accountCreateCmd = &cobra.Command{
 		accType, _ := cmd.Flags().GetString("type")
 		currency, _ := cmd.Flags().GetString("currency")
 
+		validTypes := map[string]bool{
+			"ASSET": true, "LIABILITY": true, "EQUITY": true,
+			"REVENUE": true, "EXPENSE": true,
+		}
+		if !validTypes[accType] {
+			return fmt.Errorf("invalid account type: %s (valid: ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE)", accType)
+		}
+
 		e, cleanup := initEngine()
 		defer cleanup()
 
