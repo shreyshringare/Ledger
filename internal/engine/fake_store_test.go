@@ -3,6 +3,8 @@ package engine
 import (
 	"context"
 	"fmt"
+
+	"github.com/google/uuid"
 )
 
 type fakeStore struct {
@@ -74,6 +76,14 @@ func (f *fakeStore) GetTransaction(_ context.Context, id string) (Transaction, e
 
 func (f *fakeStore) ListTransactions(_ context.Context) ([]Transaction, error) {
 	return f.transactions, nil
+}
+
+func (f *fakeStore) CheckIdempotencyKey(_ context.Context, key string) ([]byte, bool, error) {
+	return nil, false, nil
+}
+
+func (f *fakeStore) SaveIdempotencyKey(_ context.Context, key string, txID uuid.UUID, responseBody []byte) error {
+	return nil
 }
 
 func (f *fakeStore) GetBalance(_ context.Context, accountID string, currency string) (int64, error) {

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -220,6 +221,29 @@ func (s *PostgresStore) GetBalance(ctx context.Context, accountID string, curren
 		return 0, fmt.Errorf("get balance: %w", err)
 	}
 	return balance, nil
+}
+
+func (s *PostgresStore) CheckIdempotencyKey(ctx context.Context, key string) ([]byte, bool, error) {
+	var body []byte
+	err := s.db.QueryRow(ctx,
+		`SELECT response_body FROM idempotency_keys WHERE key = $1`, key,
+	).Scan(&body)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	return body, true, nil
+}
+
+func (s *PostgresStore) SaveIdempotencyKey(ctx context.Context, key string, txID uuid.UUID, responseBody []byte) error {
+	_, err := s.db.Exec(ctx,
+		`INSERT INTO idempotency_keys (key, transaction_id, response_body)
+         VALUES ($1, $2, $3) ON CONFLICT (key) DO NOTHING`,
+		key, txID, responseBody,
+	)
+	return err
 }
 
 var _ engine.Store = (*PostgresStore)(nil)

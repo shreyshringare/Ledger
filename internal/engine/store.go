@@ -1,6 +1,10 @@
 package engine
 
-import "context"
+import (
+	"context"
+
+	"github.com/google/uuid"
+)
 
 type Store interface {
 	CreateAccount(ctx context.Context, acc Account) error
@@ -15,4 +19,7 @@ type Store interface {
 	ListTransactions(ctx context.Context) ([]Transaction, error)
 
 	GetBalance(ctx context.Context, accountID string, currency string) (int64, error)
+
+	CheckIdempotencyKey(ctx context.Context, key string) ([]byte, bool, error)
+	SaveIdempotencyKey(ctx context.Context, key string, txID uuid.UUID, responseBody []byte) error
 }

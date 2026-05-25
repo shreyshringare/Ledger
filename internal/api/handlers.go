@@ -79,6 +79,22 @@ func (h *Handler) ListTransactions(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) PostTransaction(w http.ResponseWriter, r *http.Request) {
+	idempotencyKey := r.Header.Get("Idempotency-Key")
+
+	// Return cached response if key already seen
+	if idempotencyKey != "" {
+		if cached, ok, err := h.engine.Store().CheckIdempotencyKey(r.Context(), idempotencyKey); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		} else if ok {
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Idempotent-Replayed", "true")
+			w.WriteHeader(http.StatusCreated)
+			w.Write(cached)
+			return
+		}
+	}
+
 	var req struct {
 		Description string `json:"description"`
 		Entries     []struct {
@@ -113,6 +129,12 @@ func (h *Handler) PostTransaction(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
+	}
+
+	// Cache the response for future replays
+	if idempotencyKey != "" {
+		body, _ := json.Marshal(tx)
+		_ = h.engine.Store().SaveIdempotencyKey(r.Context(), idempotencyKey, tx.ID, body)
 	}
 
 	writeJSON(w, http.StatusCreated, tx)
