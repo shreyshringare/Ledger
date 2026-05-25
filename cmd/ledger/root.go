@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shreyshringare/Ledger/internal/engine"
@@ -12,13 +13,10 @@ import (
 	"github.com/spf13/viper"
 )
 
-var (
-	eng *engine.Engine
-)
-
 var rootCmd = &cobra.Command{
-	Use:   "ledger",
-	Short: "A double-entry accounting engine with SHA-256 hash chaining",
+	Use:          "ledger",
+	Short:        "A double-entry accounting engine with SHA-256 hash chaining",
+	SilenceUsage: true,
 }
 
 func Execute() {
@@ -26,6 +24,16 @@ func Execute() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+// migrateURL converts a postgres:// URL to pgx5:// for golang-migrate's pgx/v5 driver.
+func migrateURL(dbURL string) string {
+	for _, prefix := range []string{"postgres://", "postgresql://"} {
+		if strings.HasPrefix(dbURL, prefix) {
+			return "pgx5://" + dbURL[len(prefix):]
+		}
+	}
+	return dbURL // already pgx5:// or other scheme
 }
 
 func initEngine() (*engine.Engine, func()) {
@@ -36,7 +44,7 @@ func initEngine() (*engine.Engine, func()) {
 		os.Exit(1)
 	}
 
-	if err := store.RunMigrations(dbURL); err != nil {
+	if err := store.RunMigrations(migrateURL(dbURL)); err != nil {
 		fmt.Fprintf(os.Stderr, "migrations failed: %v\n", err)
 		os.Exit(1)
 	}

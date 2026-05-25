@@ -13,8 +13,9 @@ var chainCmd = &cobra.Command{
 }
 
 var chainVerifyCmd = &cobra.Command{
-	Use:   "verify",
-	Short: "Verify the integrity of the transaction hash chain",
+	Use:          "verify",
+	Short:        "Verify the integrity of the transaction hash chain",
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		e, cleanup := initEngine()
 		defer cleanup()
