@@ -90,6 +90,32 @@ func TestBalance_AssetAccount(t *testing.T) {
 	}
 }
 
+func TestBalance_RevenueAccount(t *testing.T) {
+	s := newFakeStore()
+	e := NewEngine(s)
+	ctx := context.Background()
+
+	cash := makeAccount("Cash", Asset)
+	revenue := makeAccount("Revenue", Revenue)
+	s.CreateAccount(ctx, cash)
+	s.CreateAccount(ctx, revenue)
+
+	entries := []Entry{
+		{AccountID: cash.ID, AmountMinor: 5000, Currency: "USD", IsDebit: true},
+		{AccountID: revenue.ID, AmountMinor: 5000, Currency: "USD", IsDebit: false},
+	}
+	e.Post(ctx, "Sale", entries)
+
+	// Revenue is credit-normal: raw = -5000, × NormalBalance(-1) = +5000
+	balance, err := e.Balance(ctx, revenue.ID.String(), "USD")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if balance != 5000 {
+		t.Errorf("expected balance 5000, got %d", balance)
+	}
+}
+
 func TestVerifyChain_Intact(t *testing.T) {
 	s := newFakeStore()
 	e := NewEngine(s)
