@@ -11,22 +11,22 @@ import (
 )
 
 type Entry struct {
-	ID            uuid.UUID
-	TransactionID uuid.UUID
-	AccountID     uuid.UUID
-	AmountMinor   int64
-	Currency      string
-	IsDebit       bool
-	CreatedAt     time.Time
+	ID            uuid.UUID `json:"id"`
+	TransactionID uuid.UUID `json:"transaction_id"`
+	AccountID     uuid.UUID `json:"account_id"`
+	AmountMinor   int64     `json:"amount_minor"`
+	Currency      string    `json:"currency"`
+	IsDebit       bool      `json:"is_debit"`
+	CreatedAt     time.Time `json:"created_at"`
 }
 
 type Transaction struct {
-	ID          uuid.UUID
-	Description string
-	PostedAt    time.Time
-	Hash        string
-	PrevHash    string
-	Entries     []Entry
+	ID          uuid.UUID `json:"id"`
+	Description string    `json:"description"`
+	PostedAt    time.Time `json:"posted_at"`
+	Hash        string    `json:"hash"`
+	PrevHash    string    `json:"prev_hash"`
+	Entries     []Entry   `json:"entries"`
 }
 
 // Validate() checks the double-entry invariant: sum of debits == sum of credits.
@@ -76,9 +76,10 @@ func (t Transaction) ComputeHash(prevHash string) (string, error) {
 		return "", fmt.Errorf("marshal entries: %w", err)
 	}
 
-	input := fmt.Sprintf("%s|%s|%s|%s",
+	input := fmt.Sprintf("%s|%s|%s|%s|%s",
 		t.ID.String(),
 		t.Description,
+		t.PostedAt.UTC().Format(time.RFC3339Nano),
 		prevHash,
 		string(entriesJSON),
 	)

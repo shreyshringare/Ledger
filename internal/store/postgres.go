@@ -3,7 +3,9 @@ package store
 import (
 	"context"
 	"fmt"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shreyshringare/Ledger/internal/engine"
@@ -76,9 +78,26 @@ func (s *PostgresStore) ListAccounts(ctx context.Context) ([]engine.Account, err
 	return accounts, rows.Err()
 }
 
-func (s *PostgresStore) PostTransaction(ctx context.Context, tx engine.Transaction) error {
-	return pgx.BeginFunc(ctx, s.db, func(qtx pgx.Tx) error {
-		_, err := qtx.Exec(ctx,
+func (s *PostgresStore) PostTransaction(ctx context.Context, tx engine.Transaction) (engine.Transaction, error) {
+	txOpts := pgx.TxOptions{IsoLevel: pgx.Serializable}
+	err := pgx.BeginTxFunc(ctx, s.db, txOpts, func(qtx pgx.Tx) error {
+		// Fetch last hash inside the serializable transaction to prevent race conditions.
+		var prevHash string
+		err := qtx.QueryRow(ctx,
+			`SELECT hash FROM transactions ORDER BY posted_at DESC LIMIT 1`,
+		).Scan(&prevHash)
+		if err != nil {
+			prevHash = "genesis"
+		}
+		tx.PrevHash = prevHash
+
+		hash, err := tx.ComputeHash(prevHash)
+		if err != nil {
+			return fmt.Errorf("compute hash: %w", err)
+		}
+		tx.Hash = hash
+
+		_, err = qtx.Exec(ctx,
 			`INSERT INTO transactions (id, description, posted_at, hash, prev_hash)
                          VALUES ($1, $2, $3, $4, $5)`,
 			tx.ID, tx.Description, tx.PostedAt, tx.Hash, tx.PrevHash,
@@ -98,6 +117,10 @@ func (s *PostgresStore) PostTransaction(ctx context.Context, tx engine.Transacti
 		}
 		return nil
 	})
+	if err != nil {
+		return engine.Transaction{}, err
+	}
+	return tx, nil
 }
 
 func (s *PostgresStore) GetTransaction(ctx context.Context, id string) (engine.Transaction, error) {
@@ -132,61 +155,58 @@ func (s *PostgresStore) GetTransaction(ctx context.Context, id string) (engine.T
 
 func (s *PostgresStore) ListTransactions(ctx context.Context) ([]engine.Transaction, error) {
 	rows, err := s.db.Query(ctx,
-		`SELECT id, description, posted_at, hash, prev_hash FROM transactions ORDER BY posted_at`,
+		`SELECT t.id, t.description, t.posted_at, t.hash, t.prev_hash,
+		        e.id, e.transaction_id, e.account_id, e.amount_minor, e.currency, e.is_debit, e.created_at
+		 FROM transactions t
+		 LEFT JOIN entries e ON e.transaction_id = t.id
+		 ORDER BY t.posted_at, e.created_at`,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list transactions: %w", err)
 	}
+	defer rows.Close()
 
-	var txs []engine.Transaction
+	var ordered []engine.Transaction
+	txIndex := map[string]int{}
+
 	for rows.Next() {
 		var tx engine.Transaction
-		if err := rows.Scan(&tx.ID, &tx.Description, &tx.PostedAt, &tx.Hash, &tx.PrevHash); err != nil {
-			rows.Close()
-			return nil, fmt.Errorf("scan transaction: %w", err)
-		}
-		txs = append(txs, tx)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
+		// Nullable entry columns (NULL when no entries exist for a transaction).
+		var eID, eTxID, eAccID *uuid.UUID
+		var eAmountMinor *int64
+		var eCurrency *string
+		var eIsDebit *bool
+		var eCreatedAt *time.Time
 
-	// Load entries for each transaction — required for VerifyChain to recompute correct hashes.
-	for i := range txs {
-		entryRows, err := s.db.Query(ctx,
-			`SELECT id, transaction_id, account_id, amount_minor, currency, is_debit, created_at
-			 FROM entries WHERE transaction_id = $1 ORDER BY created_at`,
-			txs[i].ID,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("get entries for tx %s: %w", txs[i].ID, err)
+		if err := rows.Scan(
+			&tx.ID, &tx.Description, &tx.PostedAt, &tx.Hash, &tx.PrevHash,
+			&eID, &eTxID, &eAccID, &eAmountMinor, &eCurrency, &eIsDebit, &eCreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan row: %w", err)
 		}
-		for entryRows.Next() {
-			var e engine.Entry
-			if err := entryRows.Scan(&e.ID, &e.TransactionID, &e.AccountID, &e.AmountMinor, &e.Currency, &e.IsDebit, &e.CreatedAt); err != nil {
-				entryRows.Close()
-				return nil, fmt.Errorf("scan entry: %w", err)
+
+		txKey := tx.ID.String()
+		idx, seen := txIndex[txKey]
+		if !seen {
+			idx = len(ordered)
+			txIndex[txKey] = idx
+			ordered = append(ordered, tx)
+		}
+
+		if eID != nil {
+			e := engine.Entry{
+				ID:            *eID,
+				TransactionID: *eTxID,
+				AccountID:     *eAccID,
+				AmountMinor:   *eAmountMinor,
+				Currency:      *eCurrency,
+				IsDebit:       *eIsDebit,
+				CreatedAt:     *eCreatedAt,
 			}
-			txs[i].Entries = append(txs[i].Entries, e)
-		}
-		entryRows.Close()
-		if err := entryRows.Err(); err != nil {
-			return nil, fmt.Errorf("entries rows error for tx %s: %w", txs[i].ID, err)
+			ordered[idx].Entries = append(ordered[idx].Entries, e)
 		}
 	}
-	return txs, nil
-}
-
-func (s *PostgresStore) GetLastHash(ctx context.Context) (string, error) {
-	var hash string
-	err := s.db.QueryRow(ctx,
-		`SELECT hash FROM transactions ORDER BY posted_at DESC LIMIT 1`,
-	).Scan(&hash)
-	if err != nil {
-		return "genesis", nil
-	}
-	return hash, nil
+	return ordered, rows.Err()
 }
 
 func (s *PostgresStore) GetBalance(ctx context.Context, accountID string, currency string) (int64, error) {

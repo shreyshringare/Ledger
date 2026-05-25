@@ -8,10 +8,11 @@ type Store interface {
 	GetAccountByName(ctx context.Context, name string) (Account, error)
 	ListAccounts(ctx context.Context) ([]Account, error)
 
-	PostTransaction(ctx context.Context, tx Transaction) error
+	// PostTransaction atomically fetches the last hash, computes the new hash,
+	// and persists the transaction. Returns the completed transaction with Hash and PrevHash set.
+	PostTransaction(ctx context.Context, tx Transaction) (Transaction, error)
 	GetTransaction(ctx context.Context, id string) (Transaction, error)
 	ListTransactions(ctx context.Context) ([]Transaction, error)
 
-	GetLastHash(ctx context.Context) (string, error)
 	GetBalance(ctx context.Context, accountID string, currency string) (int64, error)
 }

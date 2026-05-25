@@ -17,13 +17,8 @@ func NewEngine(s Store) *Engine {
 }
 
 func (e *Engine) Post(ctx context.Context, description string, entries []Entry) (Transaction, error) {
-	prevHash, err := e.store.GetLastHash(ctx)
-	if err != nil {
-		return Transaction{}, fmt.Errorf("get last hash: %w", err)
-	}
-
 	txID := uuid.New()
-	now := time.Now().UTC()
+	now := time.Now().UTC().Truncate(time.Microsecond)
 	for i := range entries {
 		entries[i].ID = uuid.New()
 		entries[i].TransactionID = txID
@@ -34,7 +29,6 @@ func (e *Engine) Post(ctx context.Context, description string, entries []Entry) 
 		ID:          txID,
 		Description: description,
 		PostedAt:    now,
-		PrevHash:    prevHash,
 		Entries:     entries,
 	}
 
@@ -42,17 +36,13 @@ func (e *Engine) Post(ctx context.Context, description string, entries []Entry) 
 		return Transaction{}, fmt.Errorf("validation failed: %w", err)
 	}
 
-	hash, err := tx.ComputeHash(prevHash)
+	// PostTransaction atomically fetches prev hash, computes hash, and persists.
+	committed, err := e.store.PostTransaction(ctx, tx)
 	if err != nil {
-		return Transaction{}, fmt.Errorf("compute hash: %w", err)
-	}
-	tx.Hash = hash
-
-	if err := e.store.PostTransaction(ctx, tx); err != nil {
 		return Transaction{}, fmt.Errorf("post transaction: %w", err)
 	}
 
-	return tx, nil
+	return committed, nil
 }
 
 func (e *Engine) Balance(ctx context.Context, accountID string, currency string) (int64, error) {
@@ -67,6 +57,10 @@ func (e *Engine) Balance(ctx context.Context, accountID string, currency string)
 	}
 
 	return raw * int64(acc.NormalBalance()), nil
+}
+
+func (e *Engine) Store() Store {
+	return e.store
 }
 
 func (e *Engine) VerifyChain(ctx context.Context) error {

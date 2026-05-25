@@ -46,9 +46,21 @@ func (f *fakeStore) ListAccounts(_ context.Context) ([]Account, error) {
 	return out, nil
 }
 
-func (f *fakeStore) PostTransaction(_ context.Context, tx Transaction) error {
+func (f *fakeStore) PostTransaction(_ context.Context, tx Transaction) (Transaction, error) {
+	prevHash := "genesis"
+	if len(f.transactions) > 0 {
+		prevHash = f.transactions[len(f.transactions)-1].Hash
+	}
+	tx.PrevHash = prevHash
+
+	hash, err := tx.ComputeHash(prevHash)
+	if err != nil {
+		return Transaction{}, fmt.Errorf("compute hash: %w", err)
+	}
+	tx.Hash = hash
+
 	f.transactions = append(f.transactions, tx)
-	return nil
+	return tx, nil
 }
 
 func (f *fakeStore) GetTransaction(_ context.Context, id string) (Transaction, error) {
@@ -62,13 +74,6 @@ func (f *fakeStore) GetTransaction(_ context.Context, id string) (Transaction, e
 
 func (f *fakeStore) ListTransactions(_ context.Context) ([]Transaction, error) {
 	return f.transactions, nil
-}
-
-func (f *fakeStore) GetLastHash(_ context.Context) (string, error) {
-	if len(f.transactions) == 0 {
-		return "genesis", nil
-	}
-	return f.transactions[len(f.transactions)-1].Hash, nil
 }
 
 func (f *fakeStore) GetBalance(_ context.Context, accountID string, currency string) (int64, error) {
