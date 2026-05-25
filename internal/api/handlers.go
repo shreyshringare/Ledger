@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"time"
 
@@ -81,6 +82,14 @@ func (h *Handler) ListTransactions(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) PostTransaction(w http.ResponseWriter, r *http.Request) {
 	idempotencyKey := r.Header.Get("Idempotency-Key")
 
+	// NOTE: There is a known check-then-act race: two concurrent requests with
+	// the same key can both pass this check, create two transactions, and race
+	// on SaveIdempotencyKey. The ON CONFLICT DO NOTHING in SaveIdempotencyKey
+	// means only one key row is persisted, but both transactions are committed.
+	// A fully atomic fix requires inserting the key row before creating the
+	// transaction (with a status field), or using a DB advisory lock.
+	// Acceptable for current scale; document as a known limitation.
+
 	// Return cached response if key already seen
 	if idempotencyKey != "" {
 		if cached, ok, err := h.engine.Store().CheckIdempotencyKey(r.Context(), idempotencyKey); err != nil {
@@ -90,7 +99,9 @@ func (h *Handler) PostTransaction(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Idempotent-Replayed", "true")
 			w.WriteHeader(http.StatusCreated)
-			w.Write(cached)
+			if _, err := w.Write(cached); err != nil {
+				log.Printf("idempotency: failed to write cached response: %v", err)
+			}
 			return
 		}
 	}
@@ -133,8 +144,12 @@ func (h *Handler) PostTransaction(w http.ResponseWriter, r *http.Request) {
 
 	// Cache the response for future replays
 	if idempotencyKey != "" {
-		body, _ := json.Marshal(tx)
-		_ = h.engine.Store().SaveIdempotencyKey(r.Context(), idempotencyKey, tx.ID, body)
+		body, err := json.Marshal(tx)
+		if err == nil {
+			if saveErr := h.engine.Store().SaveIdempotencyKey(r.Context(), idempotencyKey, tx.ID, body); saveErr != nil {
+				log.Printf("idempotency: failed to cache key %q: %v", idempotencyKey, saveErr)
+			}
+		}
 	}
 
 	writeJSON(w, http.StatusCreated, tx)
