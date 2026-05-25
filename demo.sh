@@ -45,6 +45,12 @@ fi
 
 ok "Preflight passed"
 
+# ── Run migrations ────────────────────────────────────────────────────────────
+
+step "Running migrations"
+$LEDGER migrate
+ok "Migrations applied"
+
 # ── Reset state ───────────────────────────────────────────────────────────────
 
 step "Resetting database to clean state"

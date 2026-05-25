@@ -4,7 +4,7 @@
 *.dll
 *.so
 *.dylib
-ledger
+/ledger
 
 # Test binary
 *.test
