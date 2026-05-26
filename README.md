@@ -1,5 +1,7 @@
 # Ledger
 
+![Go](https://img.shields.io/badge/Go-1.26.3-blue?logo=go)
+
 A double-entry accounting engine with SHA-256 hash chaining, written in Go.
 
 Every transaction is cryptographically linked to the previous one. A direct database edit — bypassing the application entirely — is detectable in O(n) time by recomputing the chain.
