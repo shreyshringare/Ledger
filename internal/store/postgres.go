@@ -214,13 +214,16 @@ func (s *PostgresStore) ListTransactionsPaginated(ctx context.Context, limit, of
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
+	if offset < 0 {
+		offset = 0
+	}
 	rows, err := s.db.Query(ctx,
 		`SELECT t.id, t.description, t.posted_at, t.hash, t.prev_hash,
 		        e.id, e.transaction_id, e.account_id, e.amount_minor, e.currency, e.is_debit, e.created_at
 		 FROM (
 		   SELECT id, description, posted_at, hash, prev_hash
 		   FROM transactions
-		   ORDER BY posted_at ASC
+		   ORDER BY posted_at ASC, id ASC
 		   LIMIT $1 OFFSET $2
 		 ) t
 		 LEFT JOIN entries e ON e.transaction_id = t.id
