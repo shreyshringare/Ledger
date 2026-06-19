@@ -31,7 +31,7 @@ var accountCreateCmd = &cobra.Command{
 			return fmt.Errorf("invalid account type: %s (valid: ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE)", accType)
 		}
 
-		e, cleanup := initEngine()
+		e, _, cleanup := initEngine()
 		defer cleanup()
 
 		acc := engine.Account{
@@ -56,7 +56,7 @@ var accountListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all accounts",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		e, cleanup := initEngine()
+		e, _, cleanup := initEngine()
 		defer cleanup()
 
 		accounts, err := e.Store().ListAccounts(context.Background())

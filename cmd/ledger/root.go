@@ -28,7 +28,7 @@ func Execute() {
 	}
 }
 
-func initEngine() (*engine.Engine, func()) {
+func initEngine() (*engine.Engine, *pgxpool.Pool, func()) {
 	viper.AutomaticEnv()
 	dbURL := viper.GetString("DATABASE_URL")
 	if dbURL == "" {
@@ -66,5 +66,5 @@ func initEngine() (*engine.Engine, func()) {
 	s := store.NewPostgresStore(pool)
 	e := engine.NewEngine(s)
 	cleanup := func() { pool.Close() }
-	return e, cleanup
+	return e, pool, cleanup
 }

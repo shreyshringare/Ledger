@@ -15,7 +15,7 @@ var balanceCmd = &cobra.Command{
 		name, _ := cmd.Flags().GetString("name")
 		currency, _ := cmd.Flags().GetString("currency")
 
-		e, cleanup := initEngine()
+		e, _, cleanup := initEngine()
 		defer cleanup()
 
 		ctx := context.Background()

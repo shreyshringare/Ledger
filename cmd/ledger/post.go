@@ -22,7 +22,7 @@ var postCmd = &cobra.Command{
 		debits, _ := cmd.Flags().GetStringArray("debit")
 		credits, _ := cmd.Flags().GetStringArray("credit")
 
-		e, cleanup := initEngine()
+		e, _, cleanup := initEngine()
 		defer cleanup()
 
 		ctx := context.Background()

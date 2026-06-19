@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/shreyshringare/Ledger/internal/api"
+	"github.com/shreyshringare/Ledger/internal/store"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -21,7 +22,7 @@ var serveCmd = &cobra.Command{
 	Short:        "Start the HTTP API server",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		e, cleanup := initEngine()
+		e, pool, cleanup := initEngine()
 		defer cleanup()
 
 		viper.AutomaticEnv()
@@ -30,7 +31,8 @@ var serveCmd = &cobra.Command{
 			port = "8080"
 		}
 
-		handler := api.NewHandler(e)
+		apiKeyStore := store.NewPostgresStore(pool)
+		handler := api.NewHandler(e, api.WithAPIKeyStore(apiKeyStore))
 		handler.InitRateLimiter(100, 60) // 100 requests per 60 seconds per API key
 		srv := &http.Server{
 			Addr:         ":" + port,
