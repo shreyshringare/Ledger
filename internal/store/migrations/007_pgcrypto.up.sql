@@ -1,0 +1,3 @@
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+ALTER TABLE accounts ADD COLUMN description BYTEA;

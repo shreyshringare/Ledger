@@ -28,9 +28,10 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 
 func (h *Handler) CreateAccount(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name     string `json:"name"`
-		Type     string `json:"type"`
-		Currency string `json:"currency"`
+		Name        string `json:"name"`
+		Type        string `json:"type"`
+		Currency    string `json:"currency"`
+		Description string `json:"description"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -48,12 +49,13 @@ func (h *Handler) CreateAccount(w http.ResponseWriter, r *http.Request) {
 	}
 
 	acc := engine.Account{
-		ID:        uuid.New(),
-		Name:      req.Name,
-		Type:      engine.AccountType(req.Type),
-		Currency:  req.Currency,
-		IsActive:  true,
-		CreatedAt: time.Now().UTC().Truncate(time.Microsecond),
+		ID:          uuid.New(),
+		Name:        req.Name,
+		Type:        engine.AccountType(req.Type),
+		Currency:    req.Currency,
+		IsActive:    true,
+		CreatedAt:   time.Now().UTC().Truncate(time.Microsecond),
+		Description: req.Description,
 	}
 
 	if err := h.engine.Store().CreateAccount(r.Context(), acc); err != nil {

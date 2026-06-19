@@ -21,21 +21,35 @@ func NewPostgresStore(db *pgxpool.Pool) *PostgresStore {
 }
 
 func (s *PostgresStore) CreateAccount(ctx context.Context, acc engine.Account) error {
+	key := encryptionKey()
+	if acc.Description != "" && key != "" {
+		_, err := s.db.Exec(ctx,
+			`INSERT INTO accounts (id, name, type, currency, is_active, created_at, description)
+			 VALUES ($1, $2, $3, $4, $5, $6, pgp_sym_encrypt($7, $8))`,
+			acc.ID, acc.Name, string(acc.Type), acc.Currency, acc.IsActive, acc.CreatedAt,
+			acc.Description, key,
+		)
+		return err
+	}
 	_, err := s.db.Exec(ctx,
 		`INSERT INTO accounts (id, name, type, currency, is_active, created_at)
-                 VALUES ($1, $2, $3, $4, $5, $6)`,
+		 VALUES ($1, $2, $3, $4, $5, $6)`,
 		acc.ID, acc.Name, string(acc.Type), acc.Currency, acc.IsActive, acc.CreatedAt,
 	)
 	return err
 }
 
 func (s *PostgresStore) GetAccount(ctx context.Context, id string) (engine.Account, error) {
+	key := encryptionKey()
 	row := s.db.QueryRow(ctx,
-		`SELECT id, name, type, currency, is_active, created_at, archived_at
+		`SELECT id, name, type, currency, is_active, created_at, archived_at,
+		        CASE WHEN description IS NOT NULL AND $2 != ''
+		             THEN pgp_sym_decrypt(description, $2)::text
+		             ELSE NULL END
 		 FROM accounts WHERE id = $1`,
-		id,
+		id, key,
 	)
-	acc, err := scanAccountRow(row)
+	acc, err := scanAccountRowWithDescription(row)
 	if err != nil {
 		return engine.Account{}, fmt.Errorf("get account: %w", err)
 	}
@@ -43,12 +57,16 @@ func (s *PostgresStore) GetAccount(ctx context.Context, id string) (engine.Accou
 }
 
 func (s *PostgresStore) GetAccountByName(ctx context.Context, name string) (engine.Account, error) {
+	key := encryptionKey()
 	row := s.db.QueryRow(ctx,
-		`SELECT id, name, type, currency, is_active, created_at, archived_at
+		`SELECT id, name, type, currency, is_active, created_at, archived_at,
+		        CASE WHEN description IS NOT NULL AND $2 != ''
+		             THEN pgp_sym_decrypt(description, $2)::text
+		             ELSE NULL END
 		 FROM accounts WHERE name = $1 AND archived_at IS NULL`,
-		name,
+		name, key,
 	)
-	acc, err := scanAccountRow(row)
+	acc, err := scanAccountRowWithDescription(row)
 	if err != nil {
 		return engine.Account{}, fmt.Errorf("get account by name: %w", err)
 	}
@@ -56,9 +74,14 @@ func (s *PostgresStore) GetAccountByName(ctx context.Context, name string) (engi
 }
 
 func (s *PostgresStore) ListAccounts(ctx context.Context) ([]engine.Account, error) {
+	key := encryptionKey()
 	rows, err := s.db.Query(ctx,
-		`SELECT id, name, type, currency, is_active, created_at, archived_at
+		`SELECT id, name, type, currency, is_active, created_at, archived_at,
+		        CASE WHEN description IS NOT NULL AND $1 != ''
+		             THEN pgp_sym_decrypt(description, $1)::text
+		             ELSE NULL END
 		 FROM accounts WHERE archived_at IS NULL ORDER BY created_at`,
+		key,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list accounts: %w", err)
@@ -70,11 +93,16 @@ func (s *PostgresStore) ListAccounts(ctx context.Context) ([]engine.Account, err
 		var acc engine.Account
 		var accType string
 		var archivedAt *time.Time
-		if err := rows.Scan(&acc.ID, &acc.Name, &accType, &acc.Currency, &acc.IsActive, &acc.CreatedAt, &archivedAt); err != nil {
+		var desc *string
+		if err := rows.Scan(&acc.ID, &acc.Name, &accType, &acc.Currency, &acc.IsActive,
+			&acc.CreatedAt, &archivedAt, &desc); err != nil {
 			return nil, fmt.Errorf("scan account: %w", err)
 		}
 		acc.Type = engine.AccountType(accType)
 		acc.ArchivedAt = archivedAt
+		if desc != nil {
+			acc.Description = *desc
+		}
 		accounts = append(accounts, acc)
 	}
 	return accounts, rows.Err()

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -25,17 +26,28 @@ func (s *PostgresStore) ArchiveAccount(ctx context.Context, id string) error {
 	return nil
 }
 
-// scanAccountRow scans a full account row including the optional archived_at column.
-// Column order: id, name, type, currency, is_active, created_at, archived_at
-func scanAccountRow(row pgx.Row) (engine.Account, error) {
+// encryptionKey reads the symmetric encryption key from the environment.
+// Returns empty string if not set — description will be NULL in that case.
+func encryptionKey() string {
+	return os.Getenv("ENCRYPTION_KEY")
+}
+
+// scanAccountRowWithDescription scans a row with columns:
+// id, name, type, currency, is_active, created_at, archived_at, description(nullable text)
+func scanAccountRowWithDescription(row pgx.Row) (engine.Account, error) {
 	var acc engine.Account
 	var accType string
 	var archivedAt *time.Time
-	err := row.Scan(&acc.ID, &acc.Name, &accType, &acc.Currency, &acc.IsActive, &acc.CreatedAt, &archivedAt)
+	var desc *string
+	err := row.Scan(&acc.ID, &acc.Name, &accType, &acc.Currency, &acc.IsActive,
+		&acc.CreatedAt, &archivedAt, &desc)
 	if err != nil {
 		return engine.Account{}, err
 	}
 	acc.Type = engine.AccountType(accType)
 	acc.ArchivedAt = archivedAt
+	if desc != nil {
+		acc.Description = *desc
+	}
 	return acc, nil
 }
