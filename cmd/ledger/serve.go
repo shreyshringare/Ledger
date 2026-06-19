@@ -30,7 +30,7 @@ var serveCmd = &cobra.Command{
 			port = "8080"
 		}
 
-		handler := api.NewHandler(e, nil) // nil replaced in Task 7 once APIKeyStore exists
+		handler := api.NewHandler(e)
 		srv := &http.Server{
 			Addr:         ":" + port,
 			Handler:      api.BuildRouter(handler),
