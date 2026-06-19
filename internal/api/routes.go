@@ -4,20 +4,34 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/shreyshringare/Ledger/internal/engine"
 )
 
-func BuildRouter(e *engine.Engine) http.Handler {
-	h := NewHandler(e)
+// BuildRouter constructs the chi router with all routes under /v1/.
+// Middleware stack (auth, rate limit, security headers) added in later tasks.
+func BuildRouter(h *Handler) http.Handler {
 	r := chi.NewRouter()
 
-	r.Post("/accounts", h.CreateAccount)
-	r.Get("/accounts", h.ListAccounts)
-	r.Post("/transactions", h.PostTransaction)
-	r.Get("/transactions", h.ListTransactions)
-	r.Get("/transactions/{id}", h.GetTransaction)
-	r.Get("/accounts/{id}/balance", h.GetBalance)
-	r.Get("/chain/verify", h.VerifyChain)
+	// Unauthenticated
+	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"status":"ok"}`)) //nolint:errcheck
+	})
+
+	// All API routes under /v1/
+	r.Route("/v1", func(r chi.Router) {
+		// Accounts
+		r.Post("/accounts", h.CreateAccount)
+		r.Get("/accounts", h.ListAccounts)
+		r.Get("/accounts/{id}/balance", h.GetBalance)
+
+		// Transactions
+		r.Post("/transactions", h.PostTransaction)
+		r.Get("/transactions", h.ListTransactions)
+		r.Get("/transactions/{id}", h.GetTransaction)
+
+		// Chain
+		r.Get("/chain/verify", h.VerifyChain)
+	})
 
 	return r
 }

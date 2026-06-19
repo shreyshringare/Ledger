@@ -26,7 +26,8 @@ var serveCmd = &cobra.Command{
 
 		addr := ":" + port
 		fmt.Fprintf(os.Stdout, "Ledger API listening on %s\n", addr)
-		return http.ListenAndServe(addr, api.BuildRouter(e))
+		handler := api.NewHandler(e, nil) // nil apiKeyStore — wired in Task 7
+		return http.ListenAndServe(addr, api.BuildRouter(handler))
 	},
 }
 
