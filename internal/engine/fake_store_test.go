@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -43,9 +44,22 @@ func (f *fakeStore) GetAccountByName(_ context.Context, name string) (Account, e
 func (f *fakeStore) ListAccounts(_ context.Context) ([]Account, error) {
 	var out []Account
 	for _, acc := range f.accounts {
-		out = append(out, acc)
+		if acc.ArchivedAt == nil {
+			out = append(out, acc)
+		}
 	}
 	return out, nil
+}
+
+func (f *fakeStore) ArchiveAccount(_ context.Context, id string) error {
+	acc, ok := f.accounts[id]
+	if !ok {
+		return fmt.Errorf("account %s not found", id)
+	}
+	now := time.Now()
+	acc.ArchivedAt = &now
+	f.accounts[id] = acc
+	return nil
 }
 
 func (f *fakeStore) PostTransaction(_ context.Context, tx Transaction) (Transaction, error) {
@@ -87,6 +101,10 @@ func (f *fakeStore) CheckIdempotencyKey(_ context.Context, key string) ([]byte, 
 }
 
 func (f *fakeStore) SaveIdempotencyKey(_ context.Context, key string, txID uuid.UUID, responseBody []byte) error {
+	return nil
+}
+
+func (f *fakeStore) DeleteExpiredIdempotencyKeys(_ context.Context) error {
 	return nil
 }
 

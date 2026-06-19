@@ -26,6 +26,7 @@ func BuildRouter(h *Handler) http.Handler {
 		// Accounts
 		r.Post("/accounts", h.CreateAccount)
 		r.Get("/accounts", h.ListAccounts)
+		r.Delete("/accounts/{id}", h.ArchiveAccount)
 		r.Get("/accounts/{id}/balance", h.GetBalance)
 
 		// Transactions

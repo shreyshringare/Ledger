@@ -17,12 +17,13 @@ const (
 )
 
 type Account struct {
-	ID        uuid.UUID   `json:"id"`
-	Name      string      `json:"name"`
-	Type      AccountType `json:"type"`
-	Currency  string      `json:"currency"`
-	IsActive  bool        `json:"is_active"`
-	CreatedAt time.Time   `json:"created_at"`
+	ID         uuid.UUID  `json:"id"`
+	Name       string     `json:"name"`
+	Type       AccountType `json:"type"`
+	Currency   string     `json:"currency"`
+	IsActive   bool       `json:"is_active"`
+	CreatedAt  time.Time  `json:"created_at"`
+	ArchivedAt *time.Time `json:"archived_at,omitempty"`
 }
 
 // NormalBalance returns 1 if account type increases with debits like (Asset,Expense), else -1 if credits.

@@ -63,6 +63,11 @@ func (e *Engine) Store() Store {
 	return e.store
 }
 
+// ArchiveAccount soft-deletes an account by setting archived_at. Never hard-deletes.
+func (e *Engine) ArchiveAccount(ctx context.Context, id string) error {
+	return e.store.ArchiveAccount(ctx, id)
+}
+
 func (e *Engine) VerifyChain(ctx context.Context) error {
 	txs, err := e.store.ListTransactions(ctx)
 	if err != nil {

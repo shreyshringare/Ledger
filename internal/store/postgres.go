@@ -30,36 +30,35 @@ func (s *PostgresStore) CreateAccount(ctx context.Context, acc engine.Account) e
 }
 
 func (s *PostgresStore) GetAccount(ctx context.Context, id string) (engine.Account, error) {
-	var acc engine.Account
-	var accType string
-	err := s.db.QueryRow(ctx,
-		`SELECT id, name, type, currency, is_active, created_at FROM accounts WHERE id = $1`,
+	row := s.db.QueryRow(ctx,
+		`SELECT id, name, type, currency, is_active, created_at, archived_at
+		 FROM accounts WHERE id = $1`,
 		id,
-	).Scan(&acc.ID, &acc.Name, &accType, &acc.Currency, &acc.IsActive, &acc.CreatedAt)
+	)
+	acc, err := scanAccountRow(row)
 	if err != nil {
 		return engine.Account{}, fmt.Errorf("get account: %w", err)
 	}
-	acc.Type = engine.AccountType(accType)
 	return acc, nil
 }
 
 func (s *PostgresStore) GetAccountByName(ctx context.Context, name string) (engine.Account, error) {
-	var acc engine.Account
-	var accType string
-	err := s.db.QueryRow(ctx,
-		`SELECT id, name, type, currency, is_active, created_at FROM accounts WHERE name = $1`,
+	row := s.db.QueryRow(ctx,
+		`SELECT id, name, type, currency, is_active, created_at, archived_at
+		 FROM accounts WHERE name = $1 AND archived_at IS NULL`,
 		name,
-	).Scan(&acc.ID, &acc.Name, &accType, &acc.Currency, &acc.IsActive, &acc.CreatedAt)
+	)
+	acc, err := scanAccountRow(row)
 	if err != nil {
 		return engine.Account{}, fmt.Errorf("get account by name: %w", err)
 	}
-	acc.Type = engine.AccountType(accType)
 	return acc, nil
 }
 
 func (s *PostgresStore) ListAccounts(ctx context.Context) ([]engine.Account, error) {
 	rows, err := s.db.Query(ctx,
-		`SELECT id, name, type, currency, is_active, created_at FROM accounts ORDER BY created_at`,
+		`SELECT id, name, type, currency, is_active, created_at, archived_at
+		 FROM accounts WHERE archived_at IS NULL ORDER BY created_at`,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list accounts: %w", err)
@@ -70,10 +69,12 @@ func (s *PostgresStore) ListAccounts(ctx context.Context) ([]engine.Account, err
 	for rows.Next() {
 		var acc engine.Account
 		var accType string
-		if err := rows.Scan(&acc.ID, &acc.Name, &accType, &acc.Currency, &acc.IsActive, &acc.CreatedAt); err != nil {
+		var archivedAt *time.Time
+		if err := rows.Scan(&acc.ID, &acc.Name, &accType, &acc.Currency, &acc.IsActive, &acc.CreatedAt, &archivedAt); err != nil {
 			return nil, fmt.Errorf("scan account: %w", err)
 		}
 		acc.Type = engine.AccountType(accType)
+		acc.ArchivedAt = archivedAt
 		accounts = append(accounts, acc)
 	}
 	return accounts, rows.Err()

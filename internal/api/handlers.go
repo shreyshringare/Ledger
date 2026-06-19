@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strconv"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/shreyshringare/Ledger/internal/engine"
 )
 
@@ -200,6 +202,22 @@ func (h *Handler) GetBalance(w http.ResponseWriter, r *http.Request) {
 		"balance":      balance,
 		"minor_units":  true,
 	})
+}
+
+// ArchiveAccount handles DELETE /v1/accounts/{id}.
+// Sets archived_at; never hard-deletes. Financial data is never truly gone.
+func (h *Handler) ArchiveAccount(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := h.engine.ArchiveAccount(r.Context(), id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			WriteProblem(w, r, http.StatusNotFound, "Not Found", "account not found or already archived")
+			return
+		}
+		log.Printf("archive account %s: %v", id, err)
+		WriteProblem(w, r, http.StatusInternalServerError, "Internal Server Error", "failed to archive account")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) VerifyChain(w http.ResponseWriter, r *http.Request) {
