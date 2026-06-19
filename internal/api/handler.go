@@ -12,9 +12,6 @@ type contextKey string
 
 const contextKeyAPIKeyID contextKey = "api_key_id"
 
-// rateLimiter is a placeholder — full implementation in Task 8.
-type rateLimiter struct{}
-
 // Handler holds shared dependencies for all HTTP handlers.
 // Fields are added incrementally — nil fields indicate features not yet wired.
 type Handler struct {

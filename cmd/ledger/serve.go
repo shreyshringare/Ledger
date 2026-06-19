@@ -31,6 +31,7 @@ var serveCmd = &cobra.Command{
 		}
 
 		handler := api.NewHandler(e)
+		handler.InitRateLimiter(100, 60) // 100 requests per 60 seconds per API key
 		srv := &http.Server{
 			Addr:         ":" + port,
 			Handler:      api.BuildRouter(handler),
