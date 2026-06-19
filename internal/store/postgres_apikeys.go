@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/shreyshringare/Ledger/internal/engine"
 )
 
@@ -33,6 +34,9 @@ func (s *PostgresStore) GetAPIKeyByKeyID(ctx context.Context, keyID string) (eng
 		&k.ID, &k.KeyID, &k.HashedSecret, &k.Scope,
 		&k.CreatedAt, &k.RevokedAt, &k.LastUsedAt,
 	)
+	if err == pgx.ErrNoRows {
+		return engine.APIKey{}, err
+	}
 	if err != nil {
 		return engine.APIKey{}, fmt.Errorf("get api key: %w", err)
 	}
