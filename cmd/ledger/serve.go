@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/shreyshringare/Ledger/internal/api"
+	"github.com/shreyshringare/Ledger/internal/engine"
 	"github.com/shreyshringare/Ledger/internal/store"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -32,6 +33,9 @@ var serveCmd = &cobra.Command{
 
 		// Start idempotency key TTL cleanup (runs hourly, 7-day expiry)
 		e.StartIdempotencyCleanup(serveCtx)
+
+		// Fraud velocity checks: 5 txn/min, $10,000/hour per account (Visa/Mastercard standard)
+		e = e.WithVelocityChecker(engine.NewVelocityChecker(5, 60, 1_000_000, 3600))
 
 		viper.AutomaticEnv()
 		port := viper.GetString("PORT")

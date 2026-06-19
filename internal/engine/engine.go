@@ -9,7 +9,8 @@ import (
 )
 
 type Engine struct {
-	store Store
+	store         Store
+	velocityCheck *VelocityChecker // nil = no velocity checking
 }
 
 func NewEngine(s Store) *Engine {
@@ -36,6 +37,27 @@ func (e *Engine) Post(ctx context.Context, description string, entries []Entry) 
 		return Transaction{}, fmt.Errorf("validation failed: %w", err)
 	}
 
+	// Velocity check: Visa/Mastercard fraud prevention — checked before DB write
+	// so a declined transaction never touches the ledger.
+	if e.velocityCheck != nil {
+		var totalDebit int64
+		for _, entry := range entries {
+			if entry.IsDebit {
+				totalDebit += entry.AmountMinor
+			}
+		}
+		if totalDebit > 0 {
+			for _, entry := range entries {
+				if entry.IsDebit {
+					if err := e.velocityCheck.Check(ctx, entry.AccountID.String(), totalDebit); err != nil {
+						return Transaction{}, fmt.Errorf("transaction declined: %w", err)
+					}
+					break
+				}
+			}
+		}
+	}
+
 	// PostTransaction atomically fetches prev hash, computes hash, and persists.
 	committed, err := e.store.PostTransaction(ctx, tx)
 	if err != nil {
@@ -57,6 +79,13 @@ func (e *Engine) Balance(ctx context.Context, accountID string, currency string)
 	}
 
 	return raw * int64(acc.NormalBalance()), nil
+}
+
+// WithVelocityChecker enables per-account fraud velocity checks on Post.
+// Production defaults: NewVelocityChecker(5, 60, 1_000_000, 3600)
+func (e *Engine) WithVelocityChecker(vc *VelocityChecker) *Engine {
+	e.velocityCheck = vc
+	return e
 }
 
 func (e *Engine) Store() Store {
