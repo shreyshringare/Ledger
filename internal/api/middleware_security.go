@@ -1,10 +1,10 @@
 package api
 
 import (
-	"bytes"
 	"context"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -32,7 +32,7 @@ func BodySizeLimitMiddleware(maxBytes int64) func(http.Handler) http.Handler {
 				return
 			}
 			// Restore body for handler
-			r.Body = io.NopCloser(bytes.NewReader(data))
+			r.Body = io.NopCloser(strings.NewReader(string(data)))
 			next.ServeHTTP(w, r)
 		})
 	}
