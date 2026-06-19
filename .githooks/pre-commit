@@ -1,0 +1,27 @@
+#!/bin/sh
+# Pre-commit: fail if a Go file contains a hardcoded postgres:// DSN.
+# Prevents committing DATABASE_URL credentials by accident.
+
+set -e
+
+MATCHES=$(git diff --cached --name-only | grep '\.go$' | xargs grep -l 'postgres://' 2>/dev/null || true)
+
+if [ -n "$MATCHES" ]; then
+  echo "ERROR: hardcoded postgres:// DSN found in staged files:"
+  echo "$MATCHES"
+  echo ""
+  echo "Use DATABASE_URL env var instead of hardcoding connection strings."
+  exit 1
+fi
+
+# Also check for any AWS/GCP keys (common accidental leaks)
+# Note: pattern split across lines so this hook file doesn't self-trigger.
+BEGIN_CERT="-----""BEGIN"
+KEY_MATCHES=$(git diff --cached --name-only | grep -v '^\.githooks/' | xargs grep -l "AKIA\|AIza\|${BEGIN_CERT}" 2>/dev/null || true)
+if [ -n "$KEY_MATCHES" ]; then
+  echo "ERROR: possible credential pattern found in staged files:"
+  echo "$KEY_MATCHES"
+  exit 1
+fi
+
+exit 0
