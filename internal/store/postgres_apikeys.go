@@ -45,7 +45,10 @@ func (s *PostgresStore) RevokeAPIKey(ctx context.Context, id string) error {
 		`UPDATE api_keys SET revoked_at = $1 WHERE id = $2 AND revoked_at IS NULL`,
 		time.Now().UTC(), id,
 	)
-	return err
+	if err != nil {
+		return fmt.Errorf("revoke api key: %w", err)
+	}
+	return nil
 }
 
 // UpdateAPIKeyLastUsed updates last_used_at. Called after every successful auth.
@@ -55,7 +58,10 @@ func (s *PostgresStore) UpdateAPIKeyLastUsed(ctx context.Context, id string) err
 		`UPDATE api_keys SET last_used_at = $1 WHERE id = $2`,
 		time.Now().UTC(), id,
 	)
-	return err
+	if err != nil {
+		return fmt.Errorf("update api key last used: %w", err)
+	}
+	return nil
 }
 
 // compile-time interface check
