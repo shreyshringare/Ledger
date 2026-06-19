@@ -64,7 +64,8 @@ func initEngine() (*engine.Engine, *pgxpool.Pool, func()) {
 	)
 
 	s := store.NewPostgresStore(pool)
-	e := engine.NewEngine(s)
+	cb := store.NewCircuitBreakerStore(s)
+	e := engine.NewEngine(cb)
 	cleanup := func() { pool.Close() }
 	return e, pool, cleanup
 }
