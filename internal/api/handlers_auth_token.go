@@ -137,8 +137,10 @@ func (h *Handler) RefreshToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Single-use check: reject if jti already consumed.
+	// Store expiry time so the cleanup goroutine can evict entries after 24h.
 	jti := claims.ID
-	if _, loaded := h.usedRefreshIDs.LoadOrStore(jti, struct{}{}); loaded {
+	exp := claims.ExpiresAt.Time
+	if _, loaded := h.usedRefreshIDs.LoadOrStore(jti, exp); loaded {
 		WriteProblem(w, r, http.StatusUnauthorized, "Unauthorized", "refresh token already used")
 		return
 	}

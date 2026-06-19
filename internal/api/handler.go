@@ -32,6 +32,21 @@ func NewHandler(e *engine.Engine, opts ...HandlerOption) *Handler {
 	for _, o := range opts {
 		o(h)
 	}
+	// Background goroutine evicts expired refresh token JTIs (24h TTL).
+	// Prevents usedRefreshIDs from growing unbounded over time.
+	go func() {
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			now := time.Now()
+			h.usedRefreshIDs.Range(func(k, v any) bool {
+				if exp, ok := v.(time.Time); ok && now.After(exp) {
+					h.usedRefreshIDs.Delete(k)
+				}
+				return true
+			})
+		}
+	}()
 	return h
 }
 

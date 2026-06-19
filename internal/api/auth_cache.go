@@ -50,6 +50,7 @@ func (c *bcryptCache) Get(secret string) (bool, bool) {
 }
 
 // Set stores a bcrypt result with TTL. Evicts expired entries if at capacity.
+// If no expired entries exist, evicts one arbitrary entry to enforce the size bound.
 func (c *bcryptCache) Set(secret string, matched bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -58,6 +59,13 @@ func (c *bcryptCache) Set(secret string, matched bool) {
 		for k, v := range c.entries {
 			if now.After(v.expiresAt) {
 				delete(c.entries, k)
+			}
+		}
+		// Still at capacity — no expired entries. Evict one arbitrarily (map iteration is random).
+		if len(c.entries) >= c.maxSize {
+			for k := range c.entries {
+				delete(c.entries, k)
+				break
 			}
 		}
 	}

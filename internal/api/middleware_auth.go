@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -66,7 +67,9 @@ func (h *Handler) APIKeyAuthMiddleware(next http.Handler) http.Handler {
 		// Best-effort: record when this key was last used. Uses background context
 		// because the request context may be cancelled before the goroutine runs.
 		go func() {
-			if err := h.apiKeyStore.UpdateAPIKeyLastUsed(context.Background(), apiKey.ID); err != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := h.apiKeyStore.UpdateAPIKeyLastUsed(ctx, apiKey.ID); err != nil {
 				slog.Warn("failed to update api key last_used_at", "key_id", keyID, "err", err)
 			}
 		}()
