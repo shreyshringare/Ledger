@@ -25,6 +25,14 @@ var serveCmd = &cobra.Command{
 		e, pool, cleanup := initEngine()
 		defer cleanup()
 
+		// Create a context that lives for the duration of the serve command.
+		// Used for background goroutines (idempotency cleanup, etc.).
+		serveCtx, serveCancel := context.WithCancel(context.Background())
+		defer serveCancel()
+
+		// Start idempotency key TTL cleanup (runs hourly, 7-day expiry)
+		e.StartIdempotencyCleanup(serveCtx)
+
 		viper.AutomaticEnv()
 		port := viper.GetString("PORT")
 		if port == "" {

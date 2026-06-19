@@ -164,3 +164,56 @@ func TestVerifyChain_Tampered(t *testing.T) {
 		t.Error("expected tamper detection, got nil")
 	}
 }
+
+func TestArchiveAccountRemovesFromList(t *testing.T) {
+	s := newFakeStore()
+	e := NewEngine(s)
+	ctx := context.Background()
+
+	acc := Account{
+		ID:       uuid.New(),
+		Name:     "Cash",
+		Type:     Asset,
+		Currency: "USD",
+		IsActive: true,
+	}
+	if err := s.CreateAccount(ctx, acc); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := e.ArchiveAccount(ctx, acc.ID.String()); err != nil {
+		t.Fatalf("ArchiveAccount: %v", err)
+	}
+
+	accounts, err := s.ListAccounts(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range accounts {
+		if a.ID == acc.ID {
+			t.Error("archived account still appears in ListAccounts")
+		}
+	}
+}
+
+func TestStartIdempotencyCleanupStopsOnContextCancel(t *testing.T) {
+	s := newFakeStore()
+	e := NewEngine(s)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+
+	go func() {
+		e.StartIdempotencyCleanup(ctx)
+		close(done)
+	}()
+
+	cancel()
+
+	select {
+	case <-done:
+		// goroutine exited cleanly
+	case <-time.After(2 * time.Second):
+		t.Fatal("StartIdempotencyCleanup goroutine did not stop after context cancel")
+	}
+}

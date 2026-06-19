@@ -95,3 +95,24 @@ func (e *Engine) VerifyChain(ctx context.Context) error {
 	}
 	return nil
 }
+
+// StartIdempotencyCleanup starts a background goroutine that deletes idempotency
+// keys older than 7 days, running every hour. Stops when ctx is cancelled.
+// Call this from serve.go after the engine is created.
+func (e *Engine) StartIdempotencyCleanup(ctx context.Context) {
+	ticker := time.NewTicker(time.Hour)
+	go func() {
+		for {
+			select {
+			case <-ticker.C:
+				if err := e.store.DeleteExpiredIdempotencyKeys(ctx); err != nil {
+					// Log and continue — cleanup failures are non-fatal
+					_ = err
+				}
+			case <-ctx.Done():
+				ticker.Stop()
+				return
+			}
+		}
+	}()
+}
