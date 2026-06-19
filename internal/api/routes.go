@@ -17,6 +17,10 @@ func BuildRouter(h *Handler) http.Handler {
 		w.Write([]byte(`{"status":"ok"}`)) //nolint:errcheck
 	})
 
+	// Auth endpoints — validate credentials themselves, not protected by auth middleware.
+	r.Post("/v1/auth/token", h.IssueToken)
+	r.Post("/v1/auth/refresh", h.RefreshToken)
+
 	// All API routes under /v1/
 	r.Route("/v1", func(r chi.Router) {
 		// Accounts

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -15,12 +16,14 @@ const contextKeyAPIKeyID contextKey = "api_key_id"
 // Handler holds shared dependencies for all HTTP handlers.
 // Fields are added incrementally — nil fields indicate features not yet wired.
 type Handler struct {
-	engine      *engine.Engine
-	apiKeyStore engine.APIKeyStore
-	rl          *rateLimiter
-	db          *pgxpool.Pool
-	startTime   time.Time
-	cache       *bcryptCache
+	engine         *engine.Engine
+	apiKeyStore    engine.APIKeyStore
+	rl             *rateLimiter
+	db             *pgxpool.Pool
+	startTime      time.Time
+	cache          *bcryptCache
+	jwtSecret      []byte
+	usedRefreshIDs sync.Map // jti → struct{} for single-use refresh tokens
 }
 
 // NewHandler creates a Handler with all dependencies via functional options.
@@ -48,4 +51,9 @@ func WithRateLimiter(rl *rateLimiter) HandlerOption {
 // WithDB wires a pgxpool.Pool into the Handler for direct DB access.
 func WithDB(db *pgxpool.Pool) HandlerOption {
 	return func(h *Handler) { h.db = db }
+}
+
+// WithJWTSecret sets the HMAC-SHA256 signing secret for JWT token issuance and verification.
+func WithJWTSecret(secret []byte) HandlerOption {
+	return func(h *Handler) { h.jwtSecret = secret }
 }
