@@ -20,11 +20,12 @@ type Handler struct {
 	rl          *rateLimiter
 	db          *pgxpool.Pool
 	startTime   time.Time
+	cache       *bcryptCache
 }
 
 // NewHandler creates a Handler with all dependencies via functional options.
 func NewHandler(e *engine.Engine, opts ...HandlerOption) *Handler {
-	h := &Handler{engine: e, startTime: time.Now()}
+	h := &Handler{engine: e, startTime: time.Now(), cache: newBcryptCache(30*time.Second, 1000)}
 	for _, o := range opts {
 		o(h)
 	}

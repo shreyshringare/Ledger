@@ -47,10 +47,20 @@ func (h *Handler) APIKeyAuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// bcrypt.CompareHashAndPassword is constant-time — safe against timing attacks.
-		if err := bcrypt.CompareHashAndPassword([]byte(apiKey.HashedSecret), []byte(secret)); err != nil {
-			WriteProblem(w, r, http.StatusUnauthorized, "Unauthorized", "invalid API key")
-			return
+		// Check cache before expensive bcrypt (30s TTL)
+		if matched, found := h.cache.Get(secret); found {
+			if !matched {
+				WriteProblem(w, r, http.StatusUnauthorized, "Unauthorized", "invalid API key")
+				return
+			}
+		} else {
+			// Cache miss — do full bcrypt verification
+			if err := bcrypt.CompareHashAndPassword([]byte(apiKey.HashedSecret), []byte(secret)); err != nil {
+				h.cache.Set(secret, false)
+				WriteProblem(w, r, http.StatusUnauthorized, "Unauthorized", "invalid API key")
+				return
+			}
+			h.cache.Set(secret, true)
 		}
 
 		// Best-effort: record when this key was last used. Uses background context
