@@ -3,7 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
+	"runtime"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shreyshringare/Ledger/internal/engine"
@@ -39,11 +42,26 @@ func initEngine() (*engine.Engine, func()) {
 		os.Exit(1)
 	}
 	cfg.ConnConfig.RuntimeParams["timezone"] = "UTC"
+
+	nCPU := runtime.NumCPU()
+	if nCPU < 4 {
+		nCPU = 4
+	}
+	cfg.MaxConns = int32(nCPU)
+	cfg.MinConns = 2
+	cfg.MaxConnLifetime = 30 * time.Minute
+	cfg.MaxConnIdleTime = 5 * time.Minute
+	cfg.HealthCheckPeriod = 1 * time.Minute
+
 	pool, err := pgxpool.NewWithConfig(context.Background(), cfg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "connect to database: %v\n", err)
 		os.Exit(1)
 	}
+	slog.Info("db pool configured",
+		"max_conns", cfg.MaxConns,
+		"min_conns", cfg.MinConns,
+	)
 
 	s := store.NewPostgresStore(pool)
 	e := engine.NewEngine(s)
