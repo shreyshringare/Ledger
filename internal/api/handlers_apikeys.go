@@ -2,10 +2,12 @@
 package api
 
 import (
+	"crypto/hmac"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -18,6 +20,18 @@ import (
 // Returns the combined key exactly once — it is never retrievable again.
 // Body: {"scope": "read"|"write"}
 func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
+	// Dual-control bootstrap: if BOOTSTRAP_TOKEN is set, require it as an out-of-band credential.
+	// This mirrors Visa's dual-control requirement — key creation requires a separate credential.
+	// After bootstrapping, unset BOOTSTRAP_TOKEN; subsequent key creation uses normal API key auth.
+	if bootstrapToken := os.Getenv("BOOTSTRAP_TOKEN"); bootstrapToken != "" {
+		provided := r.Header.Get("X-Bootstrap-Token")
+		if !hmac.Equal([]byte(provided), []byte(bootstrapToken)) {
+			WriteProblem(w, r, http.StatusUnauthorized,
+				"Unauthorized", "valid X-Bootstrap-Token required to create first API key")
+			return
+		}
+	}
+
 	var req struct {
 		Scope string `json:"scope"`
 	}
