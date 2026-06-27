@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/shreyshringare/Ledger/internal/engine"
+	"github.com/shreyshringare/Ledger/internal/metrics"
 )
 
 // writeJSON writes v as JSON with the given status code.
@@ -220,6 +221,106 @@ func (h *Handler) ArchiveAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// FraudRings runs Tarjan's SCC algorithm over the transaction graph to detect
+// circular money flows. Updates the ledger_fraud_rings_active Prometheus gauge.
+func (h *Handler) FraudRings(w http.ResponseWriter, r *http.Request) {
+	txs, err := h.engine.Store().ListTransactions(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// Build directed graph: debit account → credit account per transaction.
+	// Edge weight = amount transferred.
+	type edge struct{ from, to string }
+	edgeFlow := make(map[edge]int64)
+	for _, tx := range txs {
+		var debitors, creditors []engine.Entry
+		for _, e := range tx.Entries {
+			if e.IsDebit {
+				debitors = append(debitors, e)
+			} else {
+				creditors = append(creditors, e)
+			}
+		}
+		for _, d := range debitors {
+			for _, c := range creditors {
+				key := edge{d.AccountID.String(), c.AccountID.String()}
+				edgeFlow[key] += d.AmountMinor
+			}
+		}
+	}
+
+	adjList := make(map[string][]string)
+	for e := range edgeFlow {
+		adjList[e.from] = append(adjList[e.from], e.to)
+	}
+
+	rings := fraudRingsSCC(adjList)
+	metrics.FraudRingsDetected.Set(float64(len(rings)))
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"rings": rings,
+		"count": len(rings),
+	})
+}
+
+// fraudRingsSCC runs Tarjan's strongly connected components algorithm.
+// Returns all SCCs with size >= 2 (cycles = potential fraud rings).
+func fraudRingsSCC(adjList map[string][]string) [][]string {
+	index := 0
+	stack := []string{}
+	onStack := map[string]bool{}
+	indices := map[string]int{}
+	lowlink := map[string]int{}
+	var sccs [][]string
+
+	var strongconnect func(v string)
+	strongconnect = func(v string) {
+		indices[v] = index
+		lowlink[v] = index
+		index++
+		stack = append(stack, v)
+		onStack[v] = true
+
+		for _, w := range adjList[v] {
+			if _, seen := indices[w]; !seen {
+				strongconnect(w)
+				if lowlink[w] < lowlink[v] {
+					lowlink[v] = lowlink[w]
+				}
+			} else if onStack[w] {
+				if indices[w] < lowlink[v] {
+					lowlink[v] = indices[w]
+				}
+			}
+		}
+
+		if lowlink[v] == indices[v] {
+			var scc []string
+			for {
+				w := stack[len(stack)-1]
+				stack = stack[:len(stack)-1]
+				onStack[w] = false
+				scc = append(scc, w)
+				if w == v {
+					break
+				}
+			}
+			if len(scc) >= 2 {
+				sccs = append(sccs, scc)
+			}
+		}
+	}
+
+	for v := range adjList {
+		if _, seen := indices[v]; !seen {
+			strongconnect(v)
+		}
+	}
+	return sccs
 }
 
 func (h *Handler) VerifyChain(w http.ResponseWriter, r *http.Request) {

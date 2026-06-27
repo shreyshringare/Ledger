@@ -36,6 +36,9 @@ func BuildRouter(h *Handler) http.Handler {
 
 		// Chain
 		r.Get("/chain/verify", h.VerifyChain)
+
+		// Fraud detection
+		r.Get("/fraud/rings", h.FraudRings)
 	})
 
 	return r
