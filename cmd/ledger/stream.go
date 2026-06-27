@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 
+	"github.com/shreyshringare/Ledger/internal/stream"
 	"github.com/spf13/cobra"
 )
 
@@ -21,9 +22,15 @@ var streamEnableCmd = &cobra.Command{
 	Short:        "Enable event streaming to a Hermes broker",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Printf("Stream enabled: broker=%s topic=%s\n", flagHermesBroker, flagTopic)
-		fmt.Println("Every committed transaction will publish a TransactionPostedEvent to Hermes.")
-		fmt.Println("To stream in the server, set HERMES_BROKER and HERMES_TOPIC env vars and run: ledger serve")
+		fmt.Printf("Connecting to Hermes broker at %s (topic: %s)...\n", flagHermesBroker, flagTopic)
+		pub, err := stream.NewPublisher(flagHermesBroker, flagTopic)
+		if err != nil {
+			return fmt.Errorf("cannot reach Hermes broker at %s: %w", flagHermesBroker, err)
+		}
+		pub.Close()
+		fmt.Printf("OK — broker reachable. Set these env vars before running `ledger serve`:\n")
+		fmt.Printf("  export HERMES_BROKER=%s\n", flagHermesBroker)
+		fmt.Printf("  export HERMES_TOPIC=%s\n", flagTopic)
 		return nil
 	},
 }
