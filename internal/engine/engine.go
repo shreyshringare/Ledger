@@ -6,11 +6,15 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/shreyshringare/Ledger/internal/metrics"
+	"github.com/shreyshringare/Ledger/internal/stream"
 )
 
 type Engine struct {
 	store         Store
 	velocityCheck *VelocityChecker // nil = no velocity checking
+	publisher     *stream.Publisher // nil = no event streaming
 }
 
 func NewEngine(s Store) *Engine {
@@ -34,6 +38,7 @@ func (e *Engine) Post(ctx context.Context, description string, entries []Entry) 
 	}
 
 	if err := tx.Validate(); err != nil {
+		metrics.TransactionFailures.WithLabelValues("imbalanced").Inc()
 		return Transaction{}, fmt.Errorf("validation failed: %w", err)
 	}
 
@@ -50,6 +55,7 @@ func (e *Engine) Post(ctx context.Context, description string, entries []Entry) 
 			for _, entry := range entries {
 				if entry.IsDebit {
 					if err := e.velocityCheck.Check(ctx, entry.AccountID.String(), totalDebit); err != nil {
+						metrics.TransactionFailures.WithLabelValues("velocity").Inc()
 						return Transaction{}, fmt.Errorf("transaction declined: %w", err)
 					}
 					break
@@ -61,7 +67,37 @@ func (e *Engine) Post(ctx context.Context, description string, entries []Entry) 
 	// PostTransaction atomically fetches prev hash, computes hash, and persists.
 	committed, err := e.store.PostTransaction(ctx, tx)
 	if err != nil {
+		metrics.TransactionFailures.WithLabelValues("db_error").Inc()
 		return Transaction{}, fmt.Errorf("post transaction: %w", err)
+	}
+
+	metrics.TransactionsPosted.Inc()
+
+	// Fire-and-forget event publish. A failure here must NEVER roll back
+	// the committed transaction. The ledger's correctness does not depend
+	// on the event stream being healthy.
+	if e.publisher != nil {
+		var totalDebit int64
+		for _, entry := range committed.Entries {
+			if entry.IsDebit {
+				totalDebit += entry.AmountMinor
+			}
+		}
+		go func() {
+			event := stream.TransactionPostedEvent{
+				EventType:   "transaction.posted",
+				TxID:        committed.ID.String(),
+				Description: committed.Description,
+				Hash:        committed.Hash,
+				PrevHash:    committed.PrevHash,
+				PostedAt:    committed.PostedAt,
+				EntryCount:  len(committed.Entries),
+				TotalDebit:  totalDebit,
+			}
+			if err := e.publisher.Publish(context.Background(), committed.ID.String(), event); err != nil {
+				metrics.EventPublishFailures.Inc()
+			}
+		}()
 	}
 
 	return committed, nil
@@ -88,6 +124,13 @@ func (e *Engine) WithVelocityChecker(vc *VelocityChecker) *Engine {
 	return e
 }
 
+// WithPublisher enables fire-and-forget event streaming to Hermes on every Post.
+// A nil publisher disables streaming. Publish failures never affect transaction commits.
+func (e *Engine) WithPublisher(p *stream.Publisher) *Engine {
+	e.publisher = p
+	return e
+}
+
 func (e *Engine) Store() Store {
 	return e.store
 }
@@ -98,6 +141,9 @@ func (e *Engine) ArchiveAccount(ctx context.Context, id string) error {
 }
 
 func (e *Engine) VerifyChain(ctx context.Context) error {
+	timer := prometheus.NewTimer(metrics.ChainVerifyLatency)
+	defer timer.ObserveDuration()
+
 	txs, err := e.store.ListTransactions(ctx)
 	if err != nil {
 		return fmt.Errorf("list transactions: %w", err)
