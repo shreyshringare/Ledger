@@ -26,10 +26,14 @@ import (
 var testPool *pgxpool.Pool
 
 func TestMain(m *testing.M) {
+	os.Exit(runMain(m))
+}
+
+func runMain(m *testing.M) int {
 	pool, err := dockertest.NewPool("")
 	if err != nil {
 		log.Printf("Could not connect to Docker (skipping integration tests): %v", err)
-		os.Exit(0)
+		return 0
 	}
 
 	resource, err := pool.RunWithOptions(&dockertest.RunOptions{
@@ -46,8 +50,9 @@ func TestMain(m *testing.M) {
 	})
 	if err != nil {
 		log.Printf("Could not start postgres container (skipping integration tests): %v", err)
-		os.Exit(0)
+		return 0
 	}
+	defer pool.Purge(resource)
 
 	// Hard deadline: kill container after 120 seconds regardless.
 	if err := resource.Expire(120); err != nil {
@@ -75,8 +80,7 @@ func TestMain(m *testing.M) {
 		return db.Ping(ctx)
 	}); err != nil {
 		log.Printf("Postgres never became ready (skipping integration tests): %v", err)
-		_ = pool.Purge(resource)
-		os.Exit(0)
+		return 0
 	}
 
 	// Run migrations.
@@ -84,8 +88,7 @@ func TestMain(m *testing.M) {
 	migrateURL := fmt.Sprintf("%s://postgres:secret@%s/ledger_test?sslmode=disable", pgx5Scheme, hostPort)
 	if err := store.RunMigrations(migrateURL); err != nil {
 		log.Printf("Migrations failed (skipping integration tests): %v", err)
-		_ = pool.Purge(resource)
-		os.Exit(0)
+		return 0
 	}
 
 	// Create the shared pool used by all tests.
@@ -93,18 +96,18 @@ func TestMain(m *testing.M) {
 	testPool, err = pgxpool.New(ctx, connStr)
 	if err != nil {
 		log.Printf("Could not create pgxpool (skipping integration tests): %v", err)
-		_ = pool.Purge(resource)
-		os.Exit(0)
+		return 0
 	}
+	defer testPool.Close()
 
-	code := m.Run()
+	return m.Run()
+}
 
-	testPool.Close()
-	if err := pool.Purge(resource); err != nil {
-		log.Printf("Could not purge container: %v", err)
-	}
-
-	os.Exit(code)
+// truncateTables wipes all test data so each test starts with an empty database.
+func truncateTables(t *testing.T) {
+	t.Helper()
+	_, err := testPool.Exec(context.Background(), "TRUNCATE TABLE entries, transactions, accounts, idempotency_keys RESTART IDENTITY CASCADE")
+	require.NoError(t, err)
 }
 
 // newEngine returns a fresh engine backed by testPool.
@@ -131,6 +134,7 @@ func makeAccount(t *testing.T, s engine.Store, name string, acType engine.Accoun
 
 // TestIntegrationPost verifies basic double-entry posting against a real Postgres instance.
 func TestIntegrationPost(t *testing.T) {
+	truncateTables(t)
 	eng := newEngine()
 	ctx := context.Background()
 
@@ -150,6 +154,7 @@ func TestIntegrationPost(t *testing.T) {
 
 // TestIntegrationVerifyChain posts 3 transactions and verifies the SHA-256 chain is intact.
 func TestIntegrationVerifyChain(t *testing.T) {
+	truncateTables(t)
 	eng := newEngine()
 	ctx := context.Background()
 
@@ -170,6 +175,7 @@ func TestIntegrationVerifyChain(t *testing.T) {
 
 // TestIntegrationImbalancedRejected verifies that debit ≠ credit transactions are rejected.
 func TestIntegrationImbalancedRejected(t *testing.T) {
+	truncateTables(t)
 	eng := newEngine()
 	ctx := context.Background()
 
@@ -186,6 +192,7 @@ func TestIntegrationImbalancedRejected(t *testing.T) {
 
 // TestIntegrationAppendOnlyBlocksDelete verifies the PostgreSQL RULE blocks DELETE on transactions.
 func TestIntegrationAppendOnlyBlocksDelete(t *testing.T) {
+	truncateTables(t)
 	eng := newEngine()
 	ctx := context.Background()
 
@@ -204,6 +211,7 @@ func TestIntegrationAppendOnlyBlocksDelete(t *testing.T) {
 
 // TestIntegrationAppendOnlyBlocksUpdate verifies the PostgreSQL RULE blocks UPDATE on transactions.
 func TestIntegrationAppendOnlyBlocksUpdate(t *testing.T) {
+	truncateTables(t)
 	eng := newEngine()
 	ctx := context.Background()
 
@@ -224,6 +232,7 @@ func TestIntegrationAppendOnlyBlocksUpdate(t *testing.T) {
 // TestIntegrationFraudRings verifies end-to-end fraud ring detection via Tarjan's SCC.
 // Creates a circular flow A→B→C→A and asserts at least one ring of size ≥ 3 is detected.
 func TestIntegrationFraudRings(t *testing.T) {
+	truncateTables(t)
 	eng := newEngine()
 	ctx := context.Background()
 
@@ -253,16 +262,18 @@ func TestIntegrationFraudRings(t *testing.T) {
 
 	adjList := make(map[string][]string)
 	for _, tx := range txs {
-		var debitAcct, creditAcct string
+		var debitors, creditors []engine.Entry
 		for _, e := range tx.Entries {
 			if e.IsDebit {
-				debitAcct = e.AccountID.String()
+				debitors = append(debitors, e)
 			} else {
-				creditAcct = e.AccountID.String()
+				creditors = append(creditors, e)
 			}
 		}
-		if debitAcct != "" && creditAcct != "" {
-			adjList[creditAcct] = append(adjList[creditAcct], debitAcct)
+		for _, d := range debitors {
+			for _, c := range creditors {
+				adjList[d.AccountID.String()] = append(adjList[d.AccountID.String()], c.AccountID.String())
+			}
 		}
 	}
 
