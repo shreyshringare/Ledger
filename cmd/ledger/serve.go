@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/shreyshringare/Ledger/internal/api"
 	"github.com/shreyshringare/Ledger/internal/engine"
 	"github.com/shreyshringare/Ledger/internal/store"
@@ -46,9 +47,14 @@ var serveCmd = &cobra.Command{
 		apiKeyStore := store.NewPostgresStore(pool)
 		handler := api.NewHandler(e, api.WithAPIKeyStore(apiKeyStore))
 		handler.InitRateLimiter(100, 60) // 100 requests per 60 seconds per API key
+
+		mux := http.NewServeMux()
+		mux.Handle("/metrics", promhttp.Handler())
+		mux.Handle("/", api.BuildRouter(handler))
+
 		srv := &http.Server{
 			Addr:         ":" + port,
-			Handler:      api.BuildRouter(handler),
+			Handler:      mux,
 			ReadTimeout:  15 * time.Second,
 			WriteTimeout: 15 * time.Second,
 			IdleTimeout:  60 * time.Second,
