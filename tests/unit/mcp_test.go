@@ -1,4 +1,4 @@
-package integration_test
+package unit_test
 
 import (
 	"context"
