@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/shreyshringare/Ledger/internal/engine"
+	"github.com/shreyshringare/Ledger/internal/fraud"
 	"github.com/shreyshringare/Ledger/internal/report"
 )
 
@@ -198,7 +199,7 @@ func (t *Tools) detectFraudRings(ctx context.Context, id any, args json.RawMessa
 	}
 
 	// Tarjan's SCC to find fraud rings.
-	rings := tarjanSCC(adjList, in.MinCycleSize)
+	rings := fraud.DetectRings(adjList, in.MinCycleSize)
 	return JSONRPCResponse{JSONRPC: "2.0", ID: id, Result: map[string]any{"rings": rings, "count": len(rings)}}
 }
 
@@ -227,60 +228,4 @@ func (t *Tools) generateReport(ctx context.Context, id any, args json.RawMessage
 	default:
 		return errorResponse(id, -32602, "unknown report type: "+in.Type)
 	}
-}
-
-// tarjanSCC runs Tarjan's strongly connected components algorithm on adjList
-// and returns components with size >= minSize.
-func tarjanSCC(adjList map[string][]string, minSize int) [][]string {
-	index := 0
-	stack := []string{}
-	onStack := map[string]bool{}
-	indices := map[string]int{}
-	lowlink := map[string]int{}
-	var sccs [][]string
-
-	var strongconnect func(v string)
-	strongconnect = func(v string) {
-		indices[v] = index
-		lowlink[v] = index
-		index++
-		stack = append(stack, v)
-		onStack[v] = true
-
-		for _, w := range adjList[v] {
-			if _, seen := indices[w]; !seen {
-				strongconnect(w)
-				if lowlink[w] < lowlink[v] {
-					lowlink[v] = lowlink[w]
-				}
-			} else if onStack[w] {
-				if indices[w] < lowlink[v] {
-					lowlink[v] = indices[w]
-				}
-			}
-		}
-
-		if lowlink[v] == indices[v] {
-			var scc []string
-			for {
-				w := stack[len(stack)-1]
-				stack = stack[:len(stack)-1]
-				onStack[w] = false
-				scc = append(scc, w)
-				if w == v {
-					break
-				}
-			}
-			if len(scc) >= minSize {
-				sccs = append(sccs, scc)
-			}
-		}
-	}
-
-	for v := range adjList {
-		if _, seen := indices[v]; !seen {
-			strongconnect(v)
-		}
-	}
-	return sccs
 }

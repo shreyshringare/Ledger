@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/shreyshringare/Ledger/internal/engine"
+	"github.com/shreyshringare/Ledger/internal/fraud"
 	"github.com/shreyshringare/Ledger/internal/metrics"
 )
 
@@ -258,69 +259,13 @@ func (h *Handler) FraudRings(w http.ResponseWriter, r *http.Request) {
 		adjList[e.from] = append(adjList[e.from], e.to)
 	}
 
-	rings := fraudRingsSCC(adjList)
+	rings := fraud.DetectRings(adjList, 2)
 	metrics.FraudRingsDetected.Set(float64(len(rings)))
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"rings": rings,
 		"count": len(rings),
 	})
-}
-
-// fraudRingsSCC runs Tarjan's strongly connected components algorithm.
-// Returns all SCCs with size >= 2 (cycles = potential fraud rings).
-func fraudRingsSCC(adjList map[string][]string) [][]string {
-	index := 0
-	stack := []string{}
-	onStack := map[string]bool{}
-	indices := map[string]int{}
-	lowlink := map[string]int{}
-	var sccs [][]string
-
-	var strongconnect func(v string)
-	strongconnect = func(v string) {
-		indices[v] = index
-		lowlink[v] = index
-		index++
-		stack = append(stack, v)
-		onStack[v] = true
-
-		for _, w := range adjList[v] {
-			if _, seen := indices[w]; !seen {
-				strongconnect(w)
-				if lowlink[w] < lowlink[v] {
-					lowlink[v] = lowlink[w]
-				}
-			} else if onStack[w] {
-				if indices[w] < lowlink[v] {
-					lowlink[v] = indices[w]
-				}
-			}
-		}
-
-		if lowlink[v] == indices[v] {
-			var scc []string
-			for {
-				w := stack[len(stack)-1]
-				stack = stack[:len(stack)-1]
-				onStack[w] = false
-				scc = append(scc, w)
-				if w == v {
-					break
-				}
-			}
-			if len(scc) >= 2 {
-				sccs = append(sccs, scc)
-			}
-		}
-	}
-
-	for v := range adjList {
-		if _, seen := indices[v]; !seen {
-			strongconnect(v)
-		}
-	}
-	return sccs
 }
 
 func (h *Handler) VerifyChain(w http.ResponseWriter, r *http.Request) {
