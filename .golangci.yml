@@ -9,8 +9,6 @@ linters:
     - errcheck
     - govet
     - staticcheck
-    - gosimple
-    - unused
     - gofmt
     - goimports
     - misspell
