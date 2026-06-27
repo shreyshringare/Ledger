@@ -15,6 +15,7 @@ import (
 	"github.com/shreyshringare/Ledger/internal/api"
 	"github.com/shreyshringare/Ledger/internal/engine"
 	"github.com/shreyshringare/Ledger/internal/store"
+	"github.com/shreyshringare/Ledger/internal/stream"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -37,6 +38,23 @@ var serveCmd = &cobra.Command{
 
 		// Fraud velocity checks: 5 txn/min, $10,000/hour per account (Visa/Mastercard standard)
 		e = e.WithVelocityChecker(engine.NewVelocityChecker(5, 60, 1_000_000, 3600))
+
+		// Wire Hermes event streaming if broker is configured.
+		// Set HERMES_BROKER=localhost:9092 and HERMES_TOPIC=ledger.transactions to enable.
+		if broker := viper.GetString("HERMES_BROKER"); broker != "" {
+			topic := viper.GetString("HERMES_TOPIC")
+			if topic == "" {
+				topic = "ledger.transactions"
+			}
+			pub, err := stream.NewPublisher(broker, topic)
+			if err != nil {
+				slog.Warn("hermes publisher failed to connect — streaming disabled", "err", err)
+			} else {
+				e = e.WithPublisher(pub)
+				defer pub.Close()
+				slog.Info("hermes streaming enabled", "broker", broker, "topic", topic)
+			}
+		}
 
 		viper.AutomaticEnv()
 		port := viper.GetString("PORT")
