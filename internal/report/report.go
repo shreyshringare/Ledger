@@ -146,3 +146,79 @@ func PnL(ctx context.Context, s engine.Store, currency string) ([]PnLResult, err
 	}
 	return results, nil
 }
+
+// BalanceSheetResult summarises Assets, Liabilities, and Equity at a point in time.
+type BalanceSheetResult struct {
+	TotalAssets      int64  `json:"total_assets_minor"`
+	TotalLiabilities int64  `json:"total_liabilities_minor"`
+	TotalEquity      int64  `json:"total_equity_minor"`
+	IsBalanced       bool   `json:"is_balanced"` // Assets == Liabilities + Equity
+	Currency         string `json:"currency"`
+}
+
+// BalanceSheet computes a balance sheet grouped by currency.
+// Pass currency="" to return all currencies.
+func BalanceSheet(ctx context.Context, s engine.Store, currency string) ([]BalanceSheetResult, error) {
+	accounts, err := s.ListAccounts(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list accounts: %w", err)
+	}
+	txs, err := s.ListTransactions(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list transactions: %w", err)
+	}
+
+	accTypes := make(map[string]engine.AccountType)
+	for _, a := range accounts {
+		accTypes[a.ID.String()] = a.Type
+	}
+
+	type bals struct{ assets, liabilities, equity int64 }
+	byCurrency := make(map[string]*bals)
+
+	for _, tx := range txs {
+		for _, e := range tx.Entries {
+			if currency != "" && e.Currency != currency {
+				continue
+			}
+			b, ok := byCurrency[e.Currency]
+			if !ok {
+				b = &bals{}
+				byCurrency[e.Currency] = b
+			}
+			// Net effect: debits increase assets/expenses, credits increase liabilities/equity/revenue
+			switch accTypes[e.AccountID.String()] {
+			case engine.Asset:
+				if e.IsDebit {
+					b.assets += e.AmountMinor
+				} else {
+					b.assets -= e.AmountMinor
+				}
+			case engine.Liability:
+				if !e.IsDebit {
+					b.liabilities += e.AmountMinor
+				} else {
+					b.liabilities -= e.AmountMinor
+				}
+			case engine.Equity:
+				if !e.IsDebit {
+					b.equity += e.AmountMinor
+				} else {
+					b.equity -= e.AmountMinor
+				}
+			}
+		}
+	}
+
+	results := make([]BalanceSheetResult, 0, len(byCurrency))
+	for cur, b := range byCurrency {
+		results = append(results, BalanceSheetResult{
+			TotalAssets:      b.assets,
+			TotalLiabilities: b.liabilities,
+			TotalEquity:      b.equity,
+			IsBalanced:       b.assets == b.liabilities+b.equity,
+			Currency:         cur,
+		})
+	}
+	return results, nil
+}

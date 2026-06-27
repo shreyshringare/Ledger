@@ -39,6 +39,11 @@ func BuildRouter(h *Handler) http.Handler {
 
 		// Fraud detection
 		r.Get("/fraud/rings", h.FraudRings)
+
+		// Reports
+		r.Get("/reports/trial-balance", h.ReportTrialBalance)
+		r.Get("/reports/pnl", h.ReportPnL)
+		r.Get("/reports/balance-sheet", h.ReportBalanceSheet)
 	})
 
 	return r

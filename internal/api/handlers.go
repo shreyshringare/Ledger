@@ -14,6 +14,7 @@ import (
 	"github.com/shreyshringare/Ledger/internal/engine"
 	"github.com/shreyshringare/Ledger/internal/fraud"
 	"github.com/shreyshringare/Ledger/internal/metrics"
+	"github.com/shreyshringare/Ledger/internal/report"
 )
 
 // writeJSON writes v as JSON with the given status code.
@@ -266,6 +267,40 @@ func (h *Handler) FraudRings(w http.ResponseWriter, r *http.Request) {
 		"rings": rings,
 		"count": len(rings),
 	})
+}
+
+// ReportTrialBalance handles GET /v1/reports/trial-balance.
+func (h *Handler) ReportTrialBalance(w http.ResponseWriter, r *http.Request) {
+	rows, err := report.TrialBalance(r.Context(), h.engine.Store())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"rows": rows, "count": len(rows)})
+}
+
+// ReportPnL handles GET /v1/reports/pnl.
+// Optional query param: currency (3-letter ISO code).
+func (h *Handler) ReportPnL(w http.ResponseWriter, r *http.Request) {
+	currency := r.URL.Query().Get("currency")
+	results, err := report.PnL(r.Context(), h.engine.Store(), currency)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"results": results})
+}
+
+// ReportBalanceSheet handles GET /v1/reports/balance-sheet.
+// Optional query param: currency (3-letter ISO code).
+func (h *Handler) ReportBalanceSheet(w http.ResponseWriter, r *http.Request) {
+	currency := r.URL.Query().Get("currency")
+	results, err := report.BalanceSheet(r.Context(), h.engine.Store(), currency)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"results": results})
 }
 
 func (h *Handler) VerifyChain(w http.ResponseWriter, r *http.Request) {
