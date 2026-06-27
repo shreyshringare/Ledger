@@ -56,3 +56,21 @@ func (in FraudRingInput) Validate() error {
 	}
 	return nil
 }
+
+// GenerateReportInput selects which report to generate.
+type GenerateReportInput struct {
+	Type     string `json:"type"`     // "trial_balance", "pnl"
+	Currency string `json:"currency"` // optional ISO 3-letter code, "" = all currencies
+}
+
+// Validate hard-gates the report input.
+func (in GenerateReportInput) Validate() error {
+	valid := map[string]bool{"trial_balance": true, "pnl": true}
+	if !valid[in.Type] {
+		return fmt.Errorf("type must be one of: trial_balance, pnl — got %q", in.Type)
+	}
+	if in.Currency != "" && len(in.Currency) != 3 {
+		return fmt.Errorf("currency must be empty or a 3-letter ISO code, got %q", in.Currency)
+	}
+	return nil
+}

@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/shreyshringare/Ledger/internal/engine"
+	"github.com/shreyshringare/Ledger/internal/report"
 )
 
 // toolDefinition describes an MCP tool for the tools/list response.
@@ -71,6 +72,18 @@ func (t *Tools) List() []toolDefinition {
 				"required": []string{"min_cycle_size"},
 			},
 		},
+		{
+			Name:        "generate_report",
+			Description: "Generate a financial report. Types: trial_balance, pnl.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"type":     map[string]any{"type": "string", "enum": []string{"trial_balance", "pnl"}},
+					"currency": map[string]any{"type": "string", "description": "3-letter ISO code, omit for all currencies"},
+				},
+				"required": []string{"type"},
+			},
+		},
 	}
 }
 
@@ -93,6 +106,8 @@ func (t *Tools) Call(req JSONRPCRequest) JSONRPCResponse {
 		return t.verifyChain(ctx, req.ID)
 	case "detect_fraud_rings":
 		return t.detectFraudRings(ctx, req.ID, call.Arguments)
+	case "generate_report":
+		return t.generateReport(ctx, req.ID, call.Arguments)
 	default:
 		return errorResponse(req.ID, -32601, "unknown tool: "+call.Name)
 	}
@@ -185,6 +200,33 @@ func (t *Tools) detectFraudRings(ctx context.Context, id any, args json.RawMessa
 	// Tarjan's SCC to find fraud rings.
 	rings := tarjanSCC(adjList, in.MinCycleSize)
 	return JSONRPCResponse{JSONRPC: "2.0", ID: id, Result: map[string]any{"rings": rings, "count": len(rings)}}
+}
+
+func (t *Tools) generateReport(ctx context.Context, id any, args json.RawMessage) JSONRPCResponse {
+	var in GenerateReportInput
+	if err := json.Unmarshal(args, &in); err != nil {
+		return errorResponse(id, -32602, "invalid params: "+err.Error())
+	}
+	if err := in.Validate(); err != nil {
+		return errorResponse(id, -32602, "validation failed: "+err.Error())
+	}
+
+	switch in.Type {
+	case "trial_balance":
+		rows, err := report.TrialBalance(ctx, t.engine.Store())
+		if err != nil {
+			return errorResponse(id, -32000, err.Error())
+		}
+		return JSONRPCResponse{JSONRPC: "2.0", ID: id, Result: map[string]any{"rows": rows, "count": len(rows)}}
+	case "pnl":
+		results, err := report.PnL(ctx, t.engine.Store(), in.Currency)
+		if err != nil {
+			return errorResponse(id, -32000, err.Error())
+		}
+		return JSONRPCResponse{JSONRPC: "2.0", ID: id, Result: map[string]any{"results": results}}
+	default:
+		return errorResponse(id, -32602, "unknown report type: "+in.Type)
+	}
 }
 
 // tarjanSCC runs Tarjan's strongly connected components algorithm on adjList
